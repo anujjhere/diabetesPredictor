@@ -4,8 +4,8 @@ Answer eight simple health questions and get an **estimated risk of diabetes**, 
 
 It is a *screening* tool, not a diagnostic one: the output is a risk estimate, and a real diagnosis always needs a lab test (fasting glucose, HbA1c).
 
-<!-- Add a screenshot: fill in the form, capture the result, save it as web/screenshot.png, then uncomment the next line -->
-<!-- ![The form showing a result](web/screenshot.png) -->
+<img width="1366" height="768" alt="Screenshot 2026-10-03 182849" src="https://github.com/user-attachments/assets/42169f60-c24a-4794-b7df-7a443ee61612" />
+
 
 > **Disclaimer:** This is a learning project. It is not medical advice and must not be used to diagnose or treat anyone. Always consult a qualified doctor. Known limitations are listed in the [Limitations](#limitations) section.
 
