@@ -1,19 +1,34 @@
 # Diabetes Risk Screener
 
-A machine learning project that estimates a person's **risk of diabetes** from health data and tells them whether they should get tested. It is built as a *screening* tool, not a diagnostic one: the output is a risk estimate, and a real diagnosis always needs a lab test (fasting glucose, HbA1c).
+Answer eight simple health questions and get an **estimated risk of diabetes**, plus a suggestion on whether to get a blood test. A scikit-learn model trained on 250,000 CDC survey responses runs behind a FastAPI backend, with a plain HTML/CSS/JavaScript form in front.
+
+It is a *screening* tool, not a diagnostic one: the output is a risk estimate, and a real diagnosis always needs a lab test (fasting glucose, HbA1c).
+
+<!-- Add a screenshot: fill in the form, capture the result, save it as web/screenshot.png, then uncomment the next line -->
+<!-- ![The form showing a result](web/screenshot.png) -->
 
 > **Disclaimer:** This is a learning project. It is not medical advice and must not be used to diagnose or treat anyone. Always consult a qualified doctor. Known limitations are listed in the [Limitations](#limitations) section.
 
-## Status
+## Quick start
 
-| Stage | State |
-|---|---|
-| Baseline model on the Pima dataset | Done |
-| Larger, non-lab model on CDC BRFSS data | Done |
-| Alert threshold ("high risk, get tested") | Done |
-| Saved model + `predict()` function | Done |
-| FastAPI backend | Done |
-| Web form (HTML/CSS/JS) | Done |
+```bash
+git clone https://github.com/anujjhere/diabetesPredictor.git
+cd diabetesPredictor
+python -m pip install -r requirements.txt
+```
+
+1. Download `diabetes_binary_health_indicators_BRFSS2015.csv` from Kaggle ("Diabetes Health Indicators Dataset", a free Kaggle account is needed) into the `data/` folder. The file is too large for this repository, so it is not included.
+2. Train the model. It takes about a minute and ends with `Saved models/diabetes_model.joblib`:
+   ```bash
+   python src/train.py
+   ```
+3. Start the API and leave that terminal running:
+   ```bash
+   python -m uvicorn app.main:app --reload
+   ```
+4. Open `web/index.html` in your browser, fill in the form, and click **Check my risk**.
+
+On macOS or Linux you may need `python3` instead of `python`. The API also has an interactive test page at `http://127.0.0.1:8000/docs`.
 
 ## How it works
 
@@ -32,58 +47,32 @@ A machine learning project that estimates a person's **risk of diabetes** from h
 
 The model never sees a lab value, so it can only say *how likely* a person is to have diabetes, not whether they do.
 
+## Results at a glance
+
+| Measure | Value |
+|---|---|
+| ROC-AUC | 0.817 |
+| Alert threshold | 0.124 |
+| Recall at that threshold | 0.81 |
+| Precision at that threshold | 0.29 |
+| Share of people flagged | 39% |
+
+What the terms mean:
+
+- **Recall:** of the people who really have diabetes, the share the model catches.
+- **Precision:** of the people the model flags, the share who really have it.
+- **ROC-AUC:** how well the model ranks people from low to high risk (0.5 is random guessing, 1.0 is perfect).
+- **Calibrated:** a predicted risk of 14% really means about 14 in 100 such people have diabetes.
+
 ## Why a "risk screener" and not a "diabetes detector"?
 
-Diagnosis depends on blood tests. A model trained on lab values like Glucose mostly rediscovers the diagnostic criteria doctors already use. A more useful tool uses things a person can answer without a lab (age, BMI, blood pressure, activity) and says *"your risk is high, get tested."* The BRFSS stage of this project is aimed at that.
+Diagnosis depends on blood tests. A model trained on lab values like Glucose mostly rediscovers the criteria doctors already use. This project uses only questions a person can answer without a lab (age, BMI, blood pressure, activity) and says *"your risk is high, get tested."*
 
-## Dataset (Day 1)
-
-**Pima Indians Diabetes Dataset**: 768 patients, 8 features, binary target `Outcome` (34.9% diabetic).
-
-Features: Pregnancies, Glucose, BloodPressure, SkinThickness, Insulin, BMI, DiabetesPedigreeFunction, Age.
-
-**Data quality note:** in Glucose, BloodPressure, SkinThickness, Insulin and BMI, a value of `0` is physically impossible and really means "missing". After converting zeros to missing values:
-
-| Column | Missing |
-|---|---|
-| Insulin | 374 (49%) |
-| SkinThickness | 227 (30%) |
-| BloodPressure | 35 |
-| BMI | 11 |
-| Glucose | 5 |
-
-Missing values are filled with the column median, learned **only from the training data** (inside a scikit-learn `Pipeline`) to avoid data leakage.
-
-## Method
-
-1. Stratified 80/20 train/test split (`random_state=42`)
-2. Pipeline: median imputation, standard scaling, logistic regression
-3. Evaluated with recall, precision, ROC-AUC and a confusion matrix, not just accuracy, because missing a diabetic patient is worse than a false alarm
-
-## Results
-
-Test set: 154 patients (54 diabetic, 100 non-diabetic).
-
-| Experiment | Accuracy | Diabetic recall | Diabetic precision | ROC-AUC | Missed diabetics (FN) | False alarms (FP) |
-|---|---|---|---|---|---|---|
-| Baseline (`class_weight="balanced"`) | 0.73 | 0.70 | 0.60 | 0.813 | 16 | 25 |
-| No class weighting (`class_weight=None`) | 0.71 | 0.50 | 0.60 | n/a | 27 | 18 |
-| Baseline without Insulin | n/a | n/a | n/a | 0.811 | n/a | n/a |
-
-**5-fold cross-validated ROC-AUC:** `0.815, 0.800, 0.848, 0.885, 0.839` → **mean 0.837**.
-
-### Findings
-
-- **Class weighting matters for screening.** Without it, the model missed half of the diabetic patients (recall 0.50 vs 0.70). I kept `class_weight="balanced"`.
-- **Insulin adds almost nothing here.** Dropping it moved ROC-AUC by 0.002, which is far smaller than the ~0.085 spread between cross-validation folds. With 49% of its values imputed, there is little real signal.
-- **Single splits are noisy.** The test set has only 54 diabetic cases, so one split (0.813) understated the cross-validated score (0.837). Model comparisons should use cross-validation.
-- **Glucose dominates.** It has the largest model weight (1.18), followed by BMI (0.71). Glucose is a lab value, so this model partly mirrors how diabetes is diagnosed. That is the motivation for the BRFSS stage.
-
-## Stage 2: BRFSS risk model (no lab values)
+## The model (CDC BRFSS data)
 
 ### Dataset
 
-**CDC BRFSS Diabetes Health Indicators** (`diabetes_binary_health_indicators_BRFSS2015.csv`, from Kaggle): 253,680 survey rows, 22 columns, binary target `Diabetes_binary`. Only 13.9% of respondents are positive, versus 34.9% in Pima.
+**CDC BRFSS Diabetes Health Indicators** (`diabetes_binary_health_indicators_BRFSS2015.csv`, from Kaggle): 253,680 survey rows, 22 columns, binary target `Diabetes_binary`. Only 13.9% of respondents are positive.
 
 *TODO: confirm on the Kaggle dataset page whether `Diabetes_binary = 1` means diabetes only or prediabetes and diabetes, and state it here.*
 
@@ -133,9 +122,9 @@ Training recall (80%) and test recall (80.7%) agree, which suggests the threshol
 
 - **Probabilities and alerts are separate decisions.** The model produces a calibrated risk; the cutoff is a policy choice about how many missed cases are acceptable versus how many unnecessary tests.
 - **Precision is modest.** About 3 in 10 flagged people are positive, roughly twice the base rate of 14%. That is reasonable for a cheap first-pass screen, but the output must say "consider a blood test", never "you have diabetes".
-- **No lab values needed.** ROC-AUC 0.817 from eight self-reported answers is close to the cross-validated score of the Pima model that used Glucose directly.
+- **No lab values needed.** ROC-AUC 0.817 from eight self-reported answers is close to the cross-validated score of the Pima baseline (see the appendix) that used Glucose directly.
 
-## Stage 3: API and web form
+## The API and web form
 
 ### API
 
@@ -197,24 +186,25 @@ This is a learning project, not a medical tool. The known limitations, in one pl
 
 ## Roadmap
 
-1. ~~BRFSS model~~ done (logistic regression; gradient boosting is a possible later comparison)
-2. ~~Calibrated risk + alert threshold~~ done
-3. ~~Save the model with `joblib` and write `predict(person)`~~ done
-4. ~~FastAPI backend~~ done
-5. ~~Web form with disclaimer~~ done
+1. ~~Baseline model on the Pima dataset~~ done (see the appendix)
+2. ~~BRFSS model~~ done (logistic regression; gradient boosting is a possible later comparison)
+3. ~~Calibrated risk + alert threshold~~ done
+4. ~~Save the model with `joblib` and write `predict(person)`~~ done
+5. ~~FastAPI backend~~ done
+6. ~~Web form with disclaimer~~ done
 
 **Next:**
 
-6. **Retrain on data that includes family history and diet** so those answers can change the score. NHANES (a CDC health survey) is the candidate; the exact variables and survey years still need to be checked.
-7. Compare logistic regression with gradient boosting using cross-validation.
-8. Confirm what `Diabetes_binary = 1` includes (diabetes only, or prediabetes too).
-9. Add tests for `predict()` and the API, restrict CORS, and deploy.
+7. **Retrain on data that includes family history and diet** so those answers can change the score. NHANES (a CDC health survey) is the candidate; the exact variables and survey years still need to be checked.
+8. Compare logistic regression with gradient boosting using cross-validation.
+9. Confirm what `Diabetes_binary = 1` includes (diabetes only, or prediabetes too).
+10. Add tests for `predict()` and the API, restrict CORS, and deploy.
 
 ## Project structure
 
 ```
-diabetesPrediction/
-├── data/                 # datasets (large files are git-ignored)
+diabetesPredictor/
+├── data/                 # datasets (the large BRFSS file is git-ignored)
 ├── src/
 │   ├── day1_pima_baseline.py   # Pima baseline experiments
 │   ├── train.py                # BRFSS model, threshold, saves the model
@@ -230,38 +220,71 @@ diabetesPrediction/
 └── README.md
 ```
 
-## Run it
-
-```bash
-pip install -r requirements.txt
-python src/day1_pima_baseline.py data/diabetes.csv
-```
-
-On Windows, if `pip` is not recognized, use `python -m pip install -r requirements.txt`.
-
-The script prints dataset summaries, the confusion matrix, a classification report, ROC-AUC, feature weights and cross-validated ROC-AUC, then shows a Glucose histogram by outcome.
-
-**BRFSS model:** download `diabetes_binary_health_indicators_BRFSS2015.csv` from Kaggle into `data/`, then:
-
-```bash
-python src/train.py      # trains, picks the threshold, saves models/diabetes_model.joblib
-python src/predict.py    # scores two made-up example people
-```
-
-`train.py` must be run first, because the model file is not stored in the repository.
-
-**Web app:** start the API from the project root, then open the form.
-
-```bash
-python -m uvicorn app.main:app --reload   # API at http://127.0.0.1:8000 (test page at /docs)
-```
-
-Then open `web/index.html` in a browser. The page calls the API at `http://127.0.0.1:8000/predict`, so keep the API terminal running.
-
 ## Related work
 
 *TODO: add one or two papers on Pima/BRFSS diabetes prediction and compare their reported accuracy or AUC with the numbers above.*
 
+
+## Appendix: Pima baseline (the first model)
+
+<details>
+<summary>Click to expand the first experiments, run on the small Pima dataset</summary>
+
+This was the first model. It uses a lab value (Glucose), which is why the project moved on to the BRFSS data.
+
+### Dataset
+
+**Pima Indians Diabetes Dataset**: 768 patients, 8 features, binary target `Outcome` (34.9% diabetic).
+
+Features: Pregnancies, Glucose, BloodPressure, SkinThickness, Insulin, BMI, DiabetesPedigreeFunction, Age.
+
+**Data quality note:** in Glucose, BloodPressure, SkinThickness, Insulin and BMI, a value of `0` is physically impossible and really means "missing". After converting zeros to missing values:
+
+| Column | Missing |
+|---|---|
+| Insulin | 374 (49%) |
+| SkinThickness | 227 (30%) |
+| BloodPressure | 35 |
+| BMI | 11 |
+| Glucose | 5 |
+
+Missing values are filled with the column median, learned **only from the training data** (inside a scikit-learn `Pipeline`) to avoid data leakage.
+
+### Method
+
+1. Stratified 80/20 train/test split (`random_state=42`)
+2. Pipeline: median imputation, standard scaling, logistic regression
+3. Evaluated with recall, precision, ROC-AUC and a confusion matrix, not just accuracy, because missing a diabetic patient is worse than a false alarm
+
+### Results
+
+Test set: 154 patients (54 diabetic, 100 non-diabetic).
+
+| Experiment | Accuracy | Diabetic recall | Diabetic precision | ROC-AUC | Missed diabetics (FN) | False alarms (FP) |
+|---|---|---|---|---|---|---|
+| Baseline (`class_weight="balanced"`) | 0.73 | 0.70 | 0.60 | 0.813 | 16 | 25 |
+| No class weighting (`class_weight=None`) | 0.71 | 0.50 | 0.60 | n/a | 27 | 18 |
+| Baseline without Insulin | n/a | n/a | n/a | 0.811 | n/a | n/a |
+
+**5-fold cross-validated ROC-AUC:** `0.815, 0.800, 0.848, 0.885, 0.839` → **mean 0.837**.
+
+### Findings
+
+- **Class weighting matters for screening.** Without it, the model missed half of the diabetic patients (recall 0.50 vs 0.70). I kept `class_weight="balanced"`.
+- **Insulin adds almost nothing here.** Dropping it moved ROC-AUC by 0.002, which is far smaller than the ~0.085 spread between cross-validation folds. With 49% of its values imputed, there is little real signal.
+- **Single splits are noisy.** The test set has only 54 diabetic cases, so one split (0.813) understated the cross-validated score (0.837). Model comparisons should use cross-validation.
+- **Glucose dominates.** It has the largest model weight (1.18), followed by BMI (0.71). Glucose is a lab value, so this model partly mirrors how diabetes is diagnosed. That is the motivation for the BRFSS model.
+
+### Run it
+
+```bash
+python src/day1_pima_baseline.py data/diabetes.csv
+```
+
+The script prints dataset summaries, the confusion matrix, a classification report, ROC-AUC, feature weights and cross-validated ROC-AUC, then shows a Glucose histogram by outcome.
+
 ## Author
 
 Built by Anuj Vishwakarma as a first-year IT student project.
+
+</details>
