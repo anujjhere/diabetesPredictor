@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diabetes Risk Screener</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="card">
+    <h1>Diabetes Risk Screener</h1>
+    <p class="disclaimer">
+      This is a learning project, not medical advice or a diagnosis.
+      Only a blood test and a doctor can tell you whether you have diabetes.
+    </p>
+
+    <form id="risk-form">
+      <label>Age range
+        <select name="age" required>
+          <option value="" disabled selected>Choose...</option>
+          <option value="under18">Under 18</option>
+          <option value="1">18-24</option>
+          <option value="2">25-29</option>
+          <option value="3">30-34</option>
+          <option value="4">35-39</option>
+          <option value="5">40-44</option>
+          <option value="6">45-49</option>
+          <option value="7">50-54</option>
+          <option value="8">55-59</option>
+          <option value="9">60-64</option>
+          <option value="10">65-69</option>
+          <option value="11">70-74</option>
+          <option value="12">75-79</option>
+          <option value="13">80 or older</option>
+        </select>
+      </label>
+
+      <label>Sex
+        <select name="sex" required>
+          <option value="" disabled selected>Choose...</option>
+          <option value="0">Female</option>
+          <option value="1">Male</option>
+        </select>
+      </label>
+
+      <div class="row">
+        <label>Height (cm)
+          <input type="number" name="height" min="100" max="250" required>
+        </label>
+        <label>Weight (kg)
+          <input type="number" name="weight" min="20" max="300" required>
+        </label>
+      </div>
+
+      <label>Have you ever been told you have high blood pressure?
+        <select name="highbp" required>
+          <option value="" disabled selected>Choose...</option>
+          <option value="1">Yes</option>
+          <option value="0">No</option>
+        </select>
+      </label>
+
+      <label>Have you ever been told you have high cholesterol?
+        <select name="highchol" required>
+          <option value="" disabled selected>Choose...</option>
+          <option value="1">Yes</option>
+          <option value="0">No</option>
+        </select>
+      </label>
+
+      <label>Any physical activity in the past 30 days (outside of work)?
+        <select name="physactivity" required>
+          <option value="" disabled selected>Choose...</option>
+          <option value="1">Yes</option>
+          <option value="0">No</option>
+        </select>
+      </label>
+
+      <label>Have you smoked at least 100 cigarettes in your life?
+        <select name="smoker" required>
+          <option value="" disabled selected>Choose...</option>
+          <option value="1">Yes</option>
+          <option value="0">No</option>
+        </select>
+      </label>
+
+      <label>How would you rate your general health?
+        <select name="genhlth" required>
+          <option value="" disabled selected>Choose...</option>
+          <option value="1">Excellent</option>
+          <option value="2">Very good</option>
+          <option value="3">Good</option>
+          <option value="4">Fair</option>
+          <option value="5">Poor</option>
+        </select>
+      </label>
+      <label>Has a parent or sibling been diagnosed with diabetes?
+  <select name="family" required>
+    <option value="" disabled selected>Choose...</option>
+    <option value="yes">Yes</option>
+    <option value="no">No</option>
+    <option value="unsure">Not sure</option>
+  </select>
+</label>
+
+      <button type="submit">Check my risk</button>
+    </form>
+
+    <section id="result" hidden></section>
+
+    <p class="footnote">
+      Estimates come from a statistical model trained on US survey data (CDC BRFSS 2015).
+      Your answers are sent only to the API running on your own computer and are not stored.
+    </p>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

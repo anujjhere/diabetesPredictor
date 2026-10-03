@@ -2,7 +2,7 @@
 
 A machine learning project that estimates a person's **risk of diabetes** from health data and tells them whether they should get tested. It is built as a *screening* tool, not a diagnostic one: the output is a risk estimate, and a real diagnosis always needs a lab test (fasting glucose, HbA1c).
 
-> **Disclaimer:** This is a learning project. It is not medical advice and must not be used to diagnose or treat anyone. Always consult a qualified doctor.
+> **Disclaimer:** This is a learning project. It is not medical advice and must not be used to diagnose or treat anyone. Always consult a qualified doctor. Known limitations are listed in the [Limitations](#limitations) section.
 
 ## Status
 
@@ -12,8 +12,25 @@ A machine learning project that estimates a person's **risk of diabetes** from h
 | Larger, non-lab model on CDC BRFSS data | Done |
 | Alert threshold ("high risk, get tested") | Done |
 | Saved model + `predict()` function | Done |
-| FastAPI backend | Planned |
-| Web form (HTML/CSS/JS) | Planned |
+| FastAPI backend | Done |
+| Web form (HTML/CSS/JS) | Done |
+
+## How it works
+
+```text
+ Web form (browser)       FastAPI                 predict()               Saved model
+ web/index.html    -->    app/main.py      -->    src/predict.py   -->    models/diabetes_model.joblib
+ answers as JSON          POST /predict           validates, scores       logistic regression, 8 features
+        <-------------- risk, high_risk, message, disclaimer --------------
+```
+
+1. The user answers 8 questions in the web form: age range, sex, height and weight (BMI is computed in the browser), high blood pressure, high cholesterol, physical activity, smoking, and general health. A family-history question is also asked, but it is not used by the model.
+2. `script.js` sends the answers as JSON to `POST /predict`.
+3. FastAPI checks that every value is in its allowed range, then calls `predict()`.
+4. `predict()` loads the saved model and returns a risk probability. If the risk is at or above the alert threshold (0.124), it is flagged as "high risk, consider a blood test".
+5. The page shows the risk in rounded form ("about 62%", "under 1%"), a plain-language message, and the disclaimer.
+
+The model never sees a lab value, so it can only say *how likely* a person is to have diabetes, not whether they do.
 
 ## Why a "risk screener" and not a "diabetes detector"?
 
@@ -61,12 +78,6 @@ Test set: 154 patients (54 diabetic, 100 non-diabetic).
 - **Insulin adds almost nothing here.** Dropping it moved ROC-AUC by 0.002, which is far smaller than the ~0.085 spread between cross-validation folds. With 49% of its values imputed, there is little real signal.
 - **Single splits are noisy.** The test set has only 54 diabetic cases, so one split (0.813) understated the cross-validated score (0.837). Model comparisons should use cross-validation.
 - **Glucose dominates.** It has the largest model weight (1.18), followed by BMI (0.71). Glucose is a lab value, so this model partly mirrors how diabetes is diagnosed. That is the motivation for the BRFSS stage.
-
-### Limitations
-
-- Pima is small and covers a single population (women of Pima heritage, aged 21+), so results will not generalize to everyone.
-- The test set is small, so metrics have wide uncertainty.
-- Accuracy around 73% means this baseline is useful as a learning exercise, not as a real screening tool.
 
 ## Stage 2: BRFSS risk model (no lab values)
 
@@ -124,20 +135,80 @@ Training recall (80%) and test recall (80.7%) agree, which suggests the threshol
 - **Precision is modest.** About 3 in 10 flagged people are positive, roughly twice the base rate of 14%. That is reasonable for a cheap first-pass screen, but the output must say "consider a blood test", never "you have diabetes".
 - **No lab values needed.** ROC-AUC 0.817 from eight self-reported answers is close to the cross-validated score of the Pima model that used Glucose directly.
 
-### Limitations
+## Stage 3: API and web form
 
-- BRFSS is self-reported survey data from US adults (2015), so results may not carry over to other populations.
-- A single linear model with 8 features. A gradient-boosted model has not been tried yet.
-- ROC-AUC of about 0.82 means useful for ranking groups, not reliable for any one person.
-- The saved model file is git-ignored; run `python src/train.py` to create it.
+### API
+
+`app/main.py` (FastAPI) exposes `POST /predict`. Inputs are validated with pydantic (for example `Age` must be 1 to 13), so out-of-range values are rejected with a 422 error. FastAPI also generates an interactive test page at `/docs`.
+
+Example request:
+
+```json
+{"Age": 11, "BMI": 38, "HighBP": 1, "HighChol": 1,
+ "PhysActivity": 0, "GenHlth": 4, "Sex": 1, "Smoker": 1}
+```
+
+Example response:
+
+```json
+{"risk": 0.618, "high_risk": true,
+ "message": "Your risk is higher than average. Consider a blood test.",
+ "note": "Screening estimate only, not a diagnosis."}
+```
+
+CORS is open (`allow_origins=["*"]`) so a page opened from disk can call the API during development. This must be restricted before any real deployment.
+
+### Web form
+
+Plain HTML, CSS and JavaScript, with no framework. Design decisions:
+
+- **No false precision.** Risk is shown as "about 62%" or "under 1%", not "61.8%".
+- **Under 18 is not scored.** The model was trained on adults only (BRFSS), so a score for a minor would be invented. The page shows an explanation and suggests speaking to a doctor.
+- **Family history is asked but not scored.** BRFSS has no family-history column, so the answer cannot change the percentage. If the user answers Yes, the result is labelled "Model estimate (does not include family history)", the reassuring "healthy habits" line is removed, and a blood test is suggested.
+- **Disclaimer on the page itself**, not only in this README.
+- Results are written with `textContent`, never `innerHTML`.
+- Answers are sent only to the API on the user's own machine and are not stored.
+
+## Limitations
+
+This is a learning project, not a medical tool. The known limitations, in one place:
+
+### Data and labels
+
+- **The label may mean "diagnosed", not "has diabetes".** As far as I know, the BRFSS target is based on people reporting that a doctor told them they have diabetes (to be confirmed on the Kaggle page, see the TODO above). A screener is meant to find people who have not been diagnosed yet, but the model learns from people who already have been.
+- BRFSS is self-reported survey data from US adults in 2015. Results may not carry over to other populations or to newer data.
+- The relationship between BMI and diabetes risk differs between ethnic groups (for example, South Asian populations tend to develop type 2 diabetes at lower BMIs), so a model trained on US data may understate risk for some groups. This has not been measured for this model.
+- Inputs are self-reported (blood pressure, cholesterol, activity), and age is a 13-bracket code, not exact years.
+- Family history and diet (for example sugar intake) are not in the training data, so they cannot affect the score.
+- There is no training data for under-18s, so they get an explanation instead of a score.
+
+### Model and evaluation
+
+- A single linear model with 8 features. Gradient boosting has not been tried.
+- ROC-AUC of about 0.82 means the model is useful for ranking groups of people, not reliable for any one person.
+- At the chosen cutoff, precision is 0.29: roughly 3 in 10 flagged people are positive (about twice the 14% base rate), and 39% of everyone is flagged.
+- Evaluated only on a held-out part of the same 2015 survey. There is no external validation, and no check of whether recall and precision hold up across sex or age groups.
+- The Pima baseline is small (768 patients, one population) with a 154-person test set, so its metrics have wide uncertainty. It is a learning exercise.
+
+### The app
+
+- Runs locally only: not deployed, no automated tests, and CORS is open for development.
+- Not clinically validated and not a diagnosis. The on-page disclaimer says so.
 
 ## Roadmap
 
 1. ~~BRFSS model~~ done (logistic regression; gradient boosting is a possible later comparison)
 2. ~~Calibrated risk + alert threshold~~ done
 3. ~~Save the model with `joblib` and write `predict(person)`~~ done
-4. **FastAPI backend** exposing the prediction.
-5. **Web form** (HTML/CSS/JS) that calls the API and shows the risk result with a clear disclaimer.
+4. ~~FastAPI backend~~ done
+5. ~~Web form with disclaimer~~ done
+
+**Next:**
+
+6. **Retrain on data that includes family history and diet** so those answers can change the score. NHANES (a CDC health survey) is the candidate; the exact variables and survey years still need to be checked.
+7. Compare logistic regression with gradient boosting using cross-validation.
+8. Confirm what `Diabetes_binary = 1` includes (diabetes only, or prediabetes too).
+9. Add tests for `predict()` and the API, restrict CORS, and deploy.
 
 ## Project structure
 
@@ -149,8 +220,12 @@ diabetesPrediction/
 │   ├── train.py                # BRFSS model, threshold, saves the model
 │   └── predict.py              # predict(person) -> risk, high_risk, message
 ├── models/               # saved model (git-ignored, created by train.py)
-├── app/                  # FastAPI backend (planned)
-├── web/                  # frontend (planned)
+├── app/
+│   └── main.py                 # FastAPI backend: POST /predict
+├── web/
+│   ├── index.html              # the form
+│   ├── style.css
+│   └── script.js               # computes BMI, calls the API, shows the result
 ├── requirements.txt
 └── README.md
 ```
@@ -174,6 +249,14 @@ python src/predict.py    # scores two made-up example people
 ```
 
 `train.py` must be run first, because the model file is not stored in the repository.
+
+**Web app:** start the API from the project root, then open the form.
+
+```bash
+python -m uvicorn app.main:app --reload   # API at http://127.0.0.1:8000 (test page at /docs)
+```
+
+Then open `web/index.html` in a browser. The page calls the API at `http://127.0.0.1:8000/predict`, so keep the API terminal running.
 
 ## Related work
 
